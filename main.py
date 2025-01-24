@@ -1,6 +1,3 @@
-from pyrogram import Client, types, filters
-from pyrogram.enums import ParseMode
-
 from collections import defaultdict
 from pathlib import Path
 import traceback
@@ -8,6 +5,9 @@ import datetime
 import logging
 import sys
 import os
+
+from pyrogram import Client, types, filters
+from pyrogram.enums import ParseMode
 
 from config import *
 
@@ -119,6 +119,24 @@ async def _calculate_max_conversation_time(messages: list[types.Message], max_ti
     return max_duration.total_seconds() / 3600
 
 
+async def get_messages_streak(messages: list[types.Message]) -> int:
+    # Извлекаем даты сообщений (удаляем время, оставляем только даты)
+    dates = sorted(
+        {msg.date.date() for msg in messages}, # Извлечение уникальных дат
+        reverse=True # От самой новой к старой
+    )
+
+    streak = 1 # Начинаем streak с 1 дня
+    for i in range(1, len(dates)):
+        # Проверяем, является ли текущая дата на 1 день старше предыдущей
+        if dates[i] == dates[i - 1] - datetime.timedelta(days=1):
+            streak += 1
+        else:
+            break # Если пропуск в днях, streak прерывается
+
+    return streak
+
+
 async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
     """
     Calculates the message ratio between two participants in a chat.
@@ -157,6 +175,7 @@ async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
     if len(user_message_counts) < 2:
         return None
 
+    messages_streak = await get_messages_streak(messages)
     messages_top = await get_messages_top(top_messages)
 
     # Choosing first two users
@@ -173,7 +192,7 @@ async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
         
     ratio_a_to_b = messages_a / messages_b if messages_b != 0 else 0
     ratio_b_to_a = messages_b / messages_a if messages_a != 0 else 0
-  
+
   
     # Calculating max conversation time
     max_conversation_time_short = await _calculate_max_conversation_time(messages, max_time_limit = 6)
@@ -192,6 +211,7 @@ async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
             "big": max_conversation_time_big
         },
         "user_message_counts": user_message_counts,
+        "messages_streak": messages_streak,
         "messages_top": messages_top
     }
 
@@ -209,12 +229,16 @@ async def stats_command(client: Client, message: types.Message):
         logger.error(traceback.format_exc())
 
     logger.info("Creating stats....")
-    _msg = await message.reply("Creating stats....")
+    if SEND_TO_CHAT == True:
+        _msg = await message.reply("Creating stats....")
+    else:
+        _msg = await client.send_message("me", "Creating stats....")
 
 
     history_info = await calculate_message_ratio(client, chat_id) # type: dict
     user_message_counts = history_info.get("user_message_counts") # type: dict[int]
     max_conversation_time = history_info.get("max_conversation_time") # type: int
+    messages_streak = history_info.get("messages_streak") # type: int
     total_messages = history_info.get("total_messages") # type: int
     messages_top = history_info.get("messages_top") # type: dict
     ratio = history_info.get("ratio") # type: dict
@@ -238,6 +262,7 @@ async def stats_command(client: Client, message: types.Message):
 
 
         stats += f"""\n<b>Максимальное время общения:</b>\n<i>Подробное: {max_conversation_time["short"]:.2f}ч.\nКраткое: {max_conversation_time["big"]:.2f}ч.</i>"""
+        stats += f"""\n\n<b>🔥 Streak:</b> <i>{messages_streak} дней</i>"""
     else:
         stats = "<b>Chat Stats:</b>\n\n"
 
@@ -256,6 +281,7 @@ async def stats_command(client: Client, message: types.Message):
 
 
         stats += f"""\n<b>Maximum Conversation Time:</b>\n<i>Detailed: {max_conversation_time["short"]:.2f}h.\nBrief: {max_conversation_time["big"]:.2f}h.</i>"""
+        stats += f"""\n\n<b>🔥 Streak:</b> <i>{messages_streak} days</i>"""
 
 
     await _msg.edit_text(stats, parse_mode=ParseMode.HTML)

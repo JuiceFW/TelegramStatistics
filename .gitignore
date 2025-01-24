@@ -4,3 +4,4 @@ Logs
 __pycache__
 config.py
 .env
+_*.py
