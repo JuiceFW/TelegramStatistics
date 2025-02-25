@@ -137,7 +137,7 @@ async def get_messages_streak(messages: list[types.Message]) -> int:
     return streak
 
 
-async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
+async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> dict:
     """
     Calculates the message ratio between two participants in a chat.
 
@@ -154,10 +154,11 @@ async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
     try:
         messages = [] # type: list[types.Message]
         async for msg in client.get_chat_history(chat_id):
-          messages.append(msg)
+            messages.append(msg)
     except Exception as e:
         logger.error(f"Error getting messages: {e}")
         return None
+    logger.info(f"Все сообщения по [{chat_id}] получены!")
 
     top_messages = defaultdict(int)
     user_message_counts = {}
@@ -212,7 +213,7 @@ async def calculate_message_ratio(client: Client, chat_id: int) -> dict:
         },
         "user_message_counts": user_message_counts,
         "messages_streak": messages_streak,
-        "messages_top": messages_top
+        "messages_top": messages_top,
     }
 
 
@@ -235,7 +236,7 @@ async def stats_command(client: Client, message: types.Message):
         _msg = await client.send_message("me", "Creating stats....")
 
 
-    history_info = await calculate_message_ratio(client, chat_id) # type: dict
+    history_info = await calculate_message_ratio(client, me.id, chat_id) # type: dict
     user_message_counts = history_info.get("user_message_counts") # type: dict[int]
     max_conversation_time = history_info.get("max_conversation_time") # type: int
     messages_streak = history_info.get("messages_streak") # type: int
