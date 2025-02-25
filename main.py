@@ -126,10 +126,16 @@ async def get_messages_streak(messages: list[types.Message]) -> int:
         reverse=True # От самой новой к старой
     )
 
-    streak = 1 # Начинаем streak с 1 дня
-    for i in range(1, len(dates)):
+    streak = 1 # Начинаем streak с крайнего дня
+    for i, date in enumerate(dates):
         # Проверяем, является ли текущая дата на 1 день старше предыдущей
-        if dates[i] == dates[i - 1] - datetime.timedelta(days=1):
+
+        try:
+            dates[i+1]
+        except:
+            break
+
+        if date == dates[i+1] or date == dates[i+1] + datetime.timedelta(days=1):
             streak += 1
         else:
             break # Если пропуск в днях, streak прерывается
