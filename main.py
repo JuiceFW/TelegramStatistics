@@ -168,6 +168,7 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
 
     top_messages = defaultdict(int)
     user_message_counts = {}
+    message_count_but_me = 0
 
     for msg in messages:
         user_id = msg.from_user.id
@@ -178,6 +179,8 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
         top_messages[msg_date] += 1
 
         user_message_counts[user_id] += 1
+        if user_id != me_id:
+            message_count_but_me += 1
 
     if len(user_message_counts) < 2:
         return None
@@ -196,11 +199,12 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
     # If user is not found
     if messages_a == 0 or messages_b == 0:
         return None
-        
+
     ratio_a_to_b = messages_a / messages_b if messages_b != 0 else 0
     ratio_b_to_a = messages_b / messages_a if messages_a != 0 else 0
+    msg_ratio_a_to_b = messages_a / (messages_a+messages_b) if (messages_a and messages_b) else 0
+    msg_ratio_b_to_a = messages_b / (messages_a+messages_b) if (messages_a and messages_b) else 0
 
-  
     # Calculating max conversation time
     max_conversation_time_short = await _calculate_max_conversation_time(messages, max_time_limit = 6)
     max_conversation_time_big = await _calculate_max_conversation_time(messages, max_time_limit = 12)
@@ -209,8 +213,10 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
         "ratio": {
             "user_a": first_user_id,
             "ratio_a_to_b": ratio_a_to_b,
+            "msg_ratio_a_to_b": msg_ratio_a_to_b,
             "user_b": second_user_id,
-            "ratio_b_to_a": ratio_b_to_a
+            "ratio_b_to_a": ratio_b_to_a,
+            "msg_ratio_b_to_a": msg_ratio_b_to_a,
         },
         "total_messages": sum(user_message_counts.values()),
         "max_conversation_time": {
@@ -259,7 +265,8 @@ async def stats_command(client: Client, message: types.Message):
             user = await client.get_users(user_id)
 
             reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
-            stats += f"<b>{user.first_name}:</b> {count} сообщений, коэффициент ответов: {reply_ratio:.2f}\n"
+            msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
+            stats += f"<b>{user.first_name}:</b> {count} сообщений, коэф.о.: {reply_ratio:.2f}, коэф.с.: {msg_ratio:.2f}\n"
 
 
         stats += "\n<b>Топ сообщений:</b>\n<i>"
@@ -278,7 +285,8 @@ async def stats_command(client: Client, message: types.Message):
             user = await client.get_users(user_id)
 
             reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
-            stats += f"<b>{user.first_name}:</b> {count} messages, reply ratio: {reply_ratio:.2f}\n"
+            msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
+            stats += f"<b>{user.first_name}:</b> {count} messages, reply ratio: {reply_ratio:.2f}, msgs ratio: {msg_ratio:.2f}\n"
 
 
         stats += "\n<b>Top Messages:</b>\n<i>"

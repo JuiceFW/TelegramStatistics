@@ -5,3 +5,4 @@ __pycache__
 config.py
 .env
 _*.py
+offsets.json
