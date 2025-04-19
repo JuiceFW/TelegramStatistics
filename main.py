@@ -151,6 +151,8 @@ async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[in
     last_msg_time = None
     last_user_id = None
 
+    last_msg_w_time = None
+
     messages.sort(key=lambda msg: msg.date)
     for msg in messages:
         user_id = msg.from_user.id
@@ -162,10 +164,16 @@ async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[in
                 start_conv_counts[user_id] += 1
 
             # Анализ времени ответа
-            response_time = (msg.date - last_msg_time).total_seconds()
-            response_times[(user_id, last_user_id)].append(response_time)
+            if msg.date.day == last_msg_time.day:
+                response_time = (msg.date - (last_msg_w_time or last_msg_time)).total_seconds()
+                response_times[(user_id, last_user_id)].append(response_time)
         elif not last_user_id:
             start_conv_counts[user_id] += 1
+
+        if not last_user_id is None and user_id == last_user_id:
+            last_msg_w_time = last_msg_time
+        else:
+            last_msg_w_time = None
 
         last_user_id = user_id
         last_msg_time = msg.date
@@ -320,7 +328,7 @@ async def stats_command(client: Client, message: types.Message):
     if LANGUAGE == "ru":
         stats = "<b>Статистика чата:</b>\n\n"
 
-        _tmp =  "\n<b>Написал первым/ой:</b><i>"
+        _tmp =  "\n<b>Написал первым/ой:</b>\n<i>"
 
         stats += f"<b>Всего сообщений:</b> {total_messages}\n"
         for user_id, count in user_message_counts.items():
@@ -348,7 +356,7 @@ async def stats_command(client: Client, message: types.Message):
     else:
         stats = "<b>Chat Stats:</b>\n\n"
 
-        _tmp =  "\n<b>Started first:</b><i>"
+        _tmp =  "\n<b>Started first:</b>\n<i>"
 
         stats += f"<b>Total Messages:</b> {total_messages}\n"
         for user_id, count in user_message_counts.items():
