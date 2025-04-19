@@ -163,7 +163,7 @@ async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[in
 
             # Анализ времени ответа
             response_time = (msg.date - last_msg_time).total_seconds()
-            response_times[(last_user_id, user_id)].append(response_time)
+            response_times[(user_id, last_user_id)].append(response_time)
         elif not last_user_id:
             start_conv_counts[user_id] += 1
 
@@ -360,7 +360,7 @@ async def stats_command(client: Client, message: types.Message):
 
             conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
             timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
-            _tmp += f"\n<b>{user.first_name}:</b> ratio.: {conv_ratio:.2f}, av. answer time.: {timing_ratio:.2f}\n"
+            _tmp += f"<b>{user.first_name}:</b> ratio.: {conv_ratio:.2f}, av. answer time.: {timing_ratio:.2f}\n"
 
         _tmp += "</i>"
         stats += _tmp
