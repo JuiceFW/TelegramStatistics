@@ -1,5 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
+from typing import Tuple
 import traceback
 import datetime
 import logging
@@ -143,6 +144,40 @@ async def get_messages_streak(messages: list[types.Message]) -> int:
     return streak
 
 
+async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[int], dict[list]]:
+    start_conv_counts = defaultdict(int)
+    response_times = defaultdict(list)
+
+    last_msg_time = None
+    last_user_id = None
+
+    messages.sort(key=lambda msg: msg.date)
+    for msg in messages:
+        user_id = msg.from_user.id
+
+        # Анализ начала диалога
+        if not last_user_id is None and user_id != last_user_id:
+            # Новый диалог начался после предыдущего, если пауза больше 6 часов
+            if msg.date - last_msg_time > datetime.timedelta(hours=6):
+                start_conv_counts[user_id] += 1
+
+            # Анализ времени ответа
+            response_time = (msg.date - last_msg_time).total_seconds()
+            response_times[(last_user_id, user_id)].append(response_time)
+        elif not last_user_id:
+            start_conv_counts[user_id] += 1
+
+        last_user_id = user_id
+        last_msg_time = msg.date
+
+    return start_conv_counts, response_times
+
+
+async def avg_time(pair: tuple, response_times: dict[list]):
+    times = response_times.get(pair, [])
+    return sum(times) / len(times) if times else None
+
+
 async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> dict:
     """
     Calculates the message ratio between two participants in a chat.
@@ -208,15 +243,40 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
     # Calculating max conversation time
     max_conversation_time_short = await _calculate_max_conversation_time(messages, max_time_limit = 6)
     max_conversation_time_big = await _calculate_max_conversation_time(messages, max_time_limit = 12)
-  
+
+
+    start_conv_counts, response_times = await get_messages_answ_time(messages)
+
+    # Start conversation ratio
+    start_a = start_conv_counts.get(first_user_id, 0)
+    start_b = start_conv_counts.get(second_user_id, 0)
+    total_starts = start_a + start_b if (start_a + start_b) > 0 else 1
+    start_conv_ratio_a_to_b = start_a / total_starts
+    start_conv_ratio_b_to_a = start_b / total_starts
+
+    # Average answer time
+    answ_time_a_to_b = await avg_time((first_user_id, second_user_id), response_times)
+    answ_time_b_to_a = await avg_time((second_user_id, first_user_id), response_times)
+
+
     return {
         "ratio": {
             "user_a": first_user_id,
             "ratio_a_to_b": ratio_a_to_b,
             "msg_ratio_a_to_b": msg_ratio_a_to_b,
+            "start_conv_a_to_b": start_conv_ratio_a_to_b,
+
             "user_b": second_user_id,
             "ratio_b_to_a": ratio_b_to_a,
             "msg_ratio_b_to_a": msg_ratio_b_to_a,
+            "start_conv_b_to_a": start_conv_ratio_b_to_a,
+        },
+        "time": {
+            "user_a": first_user_id,
+            "answ_time_a_to_b": answ_time_a_to_b,
+
+            "user_b": second_user_id,
+            "answ_time_b_to_a": answ_time_b_to_a,
         },
         "total_messages": sum(user_message_counts.values()),
         "max_conversation_time": {
@@ -255,10 +315,12 @@ async def stats_command(client: Client, message: types.Message):
     total_messages = history_info.get("total_messages") # type: int
     messages_top = history_info.get("messages_top") # type: dict
     ratio = history_info.get("ratio") # type: dict
-
+    timing = history_info.get("time") # type: dict
 
     if LANGUAGE == "ru":
         stats = "<b>Статистика чата:</b>\n\n"
+
+        _tmp =  "\n<b>Написал первым/ой:</b><i>"
 
         stats += f"<b>Всего сообщений:</b> {total_messages}\n"
         for user_id, count in user_message_counts.items():
@@ -268,6 +330,12 @@ async def stats_command(client: Client, message: types.Message):
             msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
             stats += f"<b>{user.first_name}:</b> {count} сообщений, коэф.о.: {reply_ratio:.2f}, коэф.с.: {msg_ratio:.2f}\n"
 
+            conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
+            timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
+            _tmp += f"<b>{user.first_name}:</b> коэф.: {conv_ratio:.2f}, ср. время ответа.: {timing_ratio:.2f}\n"
+
+        _tmp += "</i>"
+        stats += _tmp
 
         stats += "\n<b>Топ сообщений:</b>\n<i>"
         for place, data in messages_top.items():
@@ -280,6 +348,8 @@ async def stats_command(client: Client, message: types.Message):
     else:
         stats = "<b>Chat Stats:</b>\n\n"
 
+        _tmp =  "\n<b>Started first:</b><i>"
+
         stats += f"<b>Total Messages:</b> {total_messages}\n"
         for user_id, count in user_message_counts.items():
             user = await client.get_users(user_id)
@@ -288,6 +358,12 @@ async def stats_command(client: Client, message: types.Message):
             msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
             stats += f"<b>{user.first_name}:</b> {count} messages, reply ratio: {reply_ratio:.2f}, msgs ratio: {msg_ratio:.2f}\n"
 
+            conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
+            timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
+            _tmp += f"\n<b>{user.first_name}:</b> ratio.: {conv_ratio:.2f}, av. answer time.: {timing_ratio:.2f}\n"
+
+        _tmp += "</i>"
+        stats += _tmp
 
         stats += "\n<b>Top Messages:</b>\n<i>"
         for place, data in messages_top.items():
