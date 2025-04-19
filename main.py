@@ -150,6 +150,7 @@ async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[in
 
     last_msg_time = None
     last_user_id = None
+    last_msg_has_text = None
 
     last_msg_w_time = None
 
@@ -159,14 +160,14 @@ async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[in
 
         # Анализ начала диалога
         if not last_user_id is None and user_id != last_user_id:
-            # Новый диалог начался после предыдущего, если пауза больше 6 часов
-            if msg.date - last_msg_time > datetime.timedelta(hours=6):
+            # Новый диалог начался после предыдущего, если пауза больше 4 часов
+            if msg.date - last_msg_time > datetime.timedelta(hours=4):
                 start_conv_counts[user_id] += 1
-
-            # Анализ времени ответа
-            if msg.date.day == last_msg_time.day:
-                response_time = (msg.date - (last_msg_w_time or last_msg_time)).total_seconds()
-                response_times[(user_id, last_user_id)].append(response_time)
+            else:
+                if (msg.text or msg.caption) and last_msg_has_text:
+                    # Анализ времени ответа
+                    response_time = (msg.date - (last_msg_w_time or last_msg_time)).total_seconds()
+                    response_times[(user_id, last_user_id)].append(response_time)
         elif not last_user_id:
             start_conv_counts[user_id] += 1
 
@@ -177,6 +178,7 @@ async def get_messages_answ_time(messages: list[types.Message]) -> Tuple[dict[in
 
         last_user_id = user_id
         last_msg_time = msg.date
+        last_msg_has_text = True if (msg.text or msg.caption) else False
 
     return start_conv_counts, response_times
 
