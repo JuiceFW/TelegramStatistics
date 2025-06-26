@@ -68,8 +68,8 @@ parsed_app = False
 app = Client(session_name, api_hash=API_HASH, api_id=API_ID, hide_password=True)
 
 
-async def get_messages_top(data_dict: dict, size: int = 5) -> dict:
-    sorted_items = sorted(data_dict.items(), key=lambda item: item[1], reverse=True)
+async def get_messages_top(data_dict: dict, size: int = 5, reverse: bool = False) -> dict:
+    sorted_items = sorted(data_dict.items(), key=lambda item: item[1], reverse=(not reverse))
     
     top_n_dict = {}
     for i in range(min(size, len(sorted_items))):
@@ -232,6 +232,7 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
 
     messages_streak = await get_messages_streak(messages)
     messages_top = await get_messages_top(top_messages)
+    messages_reverse_top = await get_messages_top(top_messages, reverse=True)
 
     # Choosing first two users
     _tmp = list(user_message_counts.keys())
@@ -296,6 +297,7 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
         "user_message_counts": user_message_counts,
         "messages_streak": messages_streak,
         "messages_top": messages_top,
+        "messages_reverse_top": messages_reverse_top,
     }
 
 
@@ -324,6 +326,7 @@ async def stats_command(client: Client, message: types.Message):
     messages_streak = history_info.get("messages_streak") # type: int
     total_messages = history_info.get("total_messages") # type: int
     messages_top = history_info.get("messages_top") # type: dict
+    messages_reverse_top = history_info.get("messages_reverse_top") # type: dict
     ratio = history_info.get("ratio") # type: dict
     timing = history_info.get("time") # type: dict
 
@@ -338,7 +341,7 @@ async def stats_command(client: Client, message: types.Message):
 
             reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
             msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
-            stats += f"<b>{user.first_name}:</b> {count} сообщений, коэф.о.: {reply_ratio:.2f}, коэф.с.: {msg_ratio:.2f}\n"
+            stats += f"<b>{user.first_name}:</b> {count} сообщений, коэф.о.: {reply_ratio:.2f}, коэф.сообщ.: {msg_ratio:.2f}\n"
 
             conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
             timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
@@ -349,6 +352,9 @@ async def stats_command(client: Client, message: types.Message):
 
         stats += "\n<b>Топ сообщений:</b>\n<i>"
         for place, data in messages_top.items():
+            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
+        stats += f'...\n'
+        for place, data in reversed(messages_reverse_top.items()):
             stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
         stats += "</i>"
 
@@ -377,6 +383,9 @@ async def stats_command(client: Client, message: types.Message):
 
         stats += "\n<b>Top Messages:</b>\n<i>"
         for place, data in messages_top.items():
+            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
+        stats += f'...\n'
+        for place, data in reversed(messages_reverse_top.items()):
             stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
         stats += "</i>"
 
