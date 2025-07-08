@@ -213,12 +213,15 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
 
     top_messages = defaultdict(int)
     user_message_counts = {}
+    user_text_av = {}
     message_count_but_me = 0
 
     for msg in messages:
         user_id = msg.from_user.id
         if user_id not in user_message_counts:
             user_message_counts[user_id] = 0
+        if user_id not in user_text_av:
+            user_text_av[user_id] = []
 
         msg_date = msg.date.strftime("%d_%m_%Y")
         top_messages[msg_date] += 1
@@ -226,6 +229,10 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
         user_message_counts[user_id] += 1
         if user_id != me_id:
             message_count_but_me += 1
+
+        msg_text = msg.text or msg.caption
+        if msg_text:
+            user_text_av[user_id].append(len(msg_text))
 
     if len(user_message_counts) < 2:
         return None
@@ -238,6 +245,9 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
     _tmp = list(user_message_counts.keys())
     first_user_id = _tmp[0]
     second_user_id = _tmp[1] if len(user_message_counts) > 1 else None
+
+    _tmp = user_text_av.get(first_user_id, []); av_msg_symbols_a = sum(_tmp)/len(_tmp)
+    _tmp = user_text_av.get(second_user_id, []); av_msg_symbols_b = sum(_tmp)/len(_tmp)
 
     messages_a = user_message_counts.get(first_user_id, 0)
     messages_b = user_message_counts.get(second_user_id, 0)
@@ -294,11 +304,109 @@ async def calculate_message_ratio(client: Client, me_id: int, chat_id: int) -> d
             "short": max_conversation_time_short,
             "big": max_conversation_time_big
         },
+        "av_text_symbols": {
+            "user_a": first_user_id,
+            "val_a": av_msg_symbols_a,
+            "user_b": second_user_id,
+            "val_b": av_msg_symbols_b,
+        },
         "user_message_counts": user_message_counts,
         "messages_streak": messages_streak,
         "messages_top": messages_top,
         "messages_reverse_top": messages_reverse_top,
     }
+
+
+async def prepare_text(client: Client, history_info: dict[str]) -> str:
+    user_message_counts = history_info.get("user_message_counts") # type: dict[int]
+    av_text_symbols = history_info.get("av_text_symbols") # type: dict[str, int]
+    max_conversation_time = history_info.get("max_conversation_time") # type: int
+    messages_streak = history_info.get("messages_streak") # type: int
+    total_messages = history_info.get("total_messages") # type: int
+    deleted_messages = str(history_info.get("deleted_messages", "-")) # type: str
+    messages_top = history_info.get("messages_top") # type: dict
+    messages_reverse_top = history_info.get("messages_reverse_top") # type: dict
+    ratio = history_info.get("ratio") # type: dict
+    timing = history_info.get("time") # type: dict
+
+    if LANGUAGE == "ru":
+        stats = "<b>Статистика чата:</b>\n\n"
+ 
+        _tmp =  "\n<b>Написал первым/ой:</b>\n<i>"
+        __tmp =  "\n<b>Средний размер текста:</b>\n<i>"
+        stats += f"<b>Всего сообщений:</b> {total_messages}\n"
+        for user_id, count in user_message_counts.items():
+            user = await client.get_users(user_id)
+
+            reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
+            msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
+            stats += f"<b>{user.first_name}:</b> {count} сообщений, коэф.о.: {reply_ratio:.2f}, коэф.сообщ.: {msg_ratio:.2f}\n"
+
+            conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
+            timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
+            _tmp += f"<b>{user.first_name}:</b> коэф.: {conv_ratio:.2f}, ср. время ответа.: {timing_ratio:.2f}\n"
+
+            av_msg_symbols = av_text_symbols.get("val_a", 0) if av_text_symbols.get("user_a") == user_id else av_text_symbols.get("val_b", 0)
+            __tmp += f"<b>{user.first_name}:</b>: {av_msg_symbols:.2f} симв.\n"
+
+        stats += f"\n<b>Удалено сообщений:</b> <i>{deleted_messages}</i>\n"
+
+        _tmp += "</i>"
+        __tmp += "</i>"
+        stats += _tmp
+        stats += __tmp
+
+        stats += "\n<b>Топ сообщений:</b>\n<i>"
+        for place, data in messages_top.items():
+            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
+        stats += f'...\n'
+        for place, data in reversed(messages_reverse_top.items()):
+            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
+        stats += "</i>"
+
+
+        stats += f"""\n<b>Максимальное время общения:</b>\n<i>Подробное: {max_conversation_time["short"]:.2f}ч.\nКраткое: {max_conversation_time["big"]:.2f}ч.</i>"""
+        stats += f"""\n\n<b>🔥 Streak:</b> <i>{messages_streak} дней</i>"""
+    else:
+        stats = "<b>Chat Stats:</b>\n\n"
+
+        _tmp =  "\n<b>Started first:</b>\n<i>"
+        __tmp =  "\n<b>Av. text size:</b>\n<i>"
+        stats += f"<b>Total Messages:</b> {total_messages}\n"
+        for user_id, count in user_message_counts.items():
+            user = await client.get_users(user_id)
+
+            reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
+            msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
+            stats += f"<b>{user.first_name}:</b> {count} messages, reply ratio: {reply_ratio:.2f}, msgs ratio: {msg_ratio:.2f}\n"
+
+            conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
+            timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
+            _tmp += f"<b>{user.first_name}:</b> ratio.: {conv_ratio:.2f}, av. answer time.: {timing_ratio:.2f}\n"
+
+            av_msg_symbols = av_text_symbols.get("val_a", 0) if av_text_symbols.get("user_a") == user_id else av_text_symbols.get("val_b", 0)
+            __tmp += f"<b>{user.first_name}:</b>: {av_msg_symbols:.2f} symb.\n"
+
+        stats += f"\n<b>Deleted messages:</b> <i>{deleted_messages}</i>\n"
+
+        _tmp += "</i>"
+        __tmp += "</i>"
+        stats += _tmp
+        stats += __tmp
+
+        stats += "\n<b>Top Messages:</b>\n<i>"
+        for place, data in messages_top.items():
+            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
+        stats += f'...\n'
+        for place, data in reversed(messages_reverse_top.items()):
+            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
+        stats += "</i>"
+
+
+        stats += f"""\n<b>Maximum Conversation Time:</b>\n<i>Detailed: {max_conversation_time["short"]:.2f}h.\nBrief: {max_conversation_time["big"]:.2f}h.</i>"""
+        stats += f"""\n\n<b>🔥 Streak:</b> <i>{messages_streak} days</i>"""
+
+    return stats
 
 
 @app.on_message(filters.private & filters.text & filters.command(["stats"]))
@@ -321,77 +429,7 @@ async def stats_command(client: Client, message: types.Message):
 
 
     history_info = await calculate_message_ratio(client, me.id, chat_id) # type: dict
-    user_message_counts = history_info.get("user_message_counts") # type: dict[int]
-    max_conversation_time = history_info.get("max_conversation_time") # type: int
-    messages_streak = history_info.get("messages_streak") # type: int
-    total_messages = history_info.get("total_messages") # type: int
-    messages_top = history_info.get("messages_top") # type: dict
-    messages_reverse_top = history_info.get("messages_reverse_top") # type: dict
-    ratio = history_info.get("ratio") # type: dict
-    timing = history_info.get("time") # type: dict
-
-    if LANGUAGE == "ru":
-        stats = "<b>Статистика чата:</b>\n\n"
-
-        _tmp =  "\n<b>Написал первым/ой:</b>\n<i>"
-
-        stats += f"<b>Всего сообщений:</b> {total_messages}\n"
-        for user_id, count in user_message_counts.items():
-            user = await client.get_users(user_id)
-
-            reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
-            msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
-            stats += f"<b>{user.first_name}:</b> {count} сообщений, коэф.о.: {reply_ratio:.2f}, коэф.сообщ.: {msg_ratio:.2f}\n"
-
-            conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
-            timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
-            _tmp += f"<b>{user.first_name}:</b> коэф.: {conv_ratio:.2f}, ср. время ответа.: {timing_ratio:.2f}\n"
-
-        _tmp += "</i>"
-        stats += _tmp
-
-        stats += "\n<b>Топ сообщений:</b>\n<i>"
-        for place, data in messages_top.items():
-            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
-        stats += f'...\n'
-        for place, data in reversed(messages_reverse_top.items()):
-            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
-        stats += "</i>"
-
-
-        stats += f"""\n<b>Максимальное время общения:</b>\n<i>Подробное: {max_conversation_time["short"]:.2f}ч.\nКраткое: {max_conversation_time["big"]:.2f}ч.</i>"""
-        stats += f"""\n\n<b>🔥 Streak:</b> <i>{messages_streak} дней</i>"""
-    else:
-        stats = "<b>Chat Stats:</b>\n\n"
-
-        _tmp =  "\n<b>Started first:</b>\n<i>"
-
-        stats += f"<b>Total Messages:</b> {total_messages}\n"
-        for user_id, count in user_message_counts.items():
-            user = await client.get_users(user_id)
-
-            reply_ratio = ratio.get("ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("ratio_b_to_a")
-            msg_ratio = ratio.get("msg_ratio_a_to_b") if ratio.get("user_a") == user_id else ratio.get("msg_ratio_b_to_a")
-            stats += f"<b>{user.first_name}:</b> {count} messages, reply ratio: {reply_ratio:.2f}, msgs ratio: {msg_ratio:.2f}\n"
-
-            conv_ratio = ratio.get("start_conv_a_to_b") if ratio.get("user_a") == user_id else ratio.get("start_conv_b_to_a")
-            timing_ratio = timing.get("answ_time_a_to_b") if timing.get("user_a") == user_id else timing.get("answ_time_b_to_a")
-            _tmp += f"<b>{user.first_name}:</b> ratio.: {conv_ratio:.2f}, av. answer time.: {timing_ratio:.2f}\n"
-
-        _tmp += "</i>"
-        stats += _tmp
-
-        stats += "\n<b>Top Messages:</b>\n<i>"
-        for place, data in messages_top.items():
-            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
-        stats += f'...\n'
-        for place, data in reversed(messages_reverse_top.items()):
-            stats += f'{data.get("date").replace("_", ".")} - {data.get("count")}\n'
-        stats += "</i>"
-
-
-        stats += f"""\n<b>Maximum Conversation Time:</b>\n<i>Detailed: {max_conversation_time["short"]:.2f}h.\nBrief: {max_conversation_time["big"]:.2f}h.</i>"""
-        stats += f"""\n\n<b>🔥 Streak:</b> <i>{messages_streak} days</i>"""
+    stats = await prepare_text(history_info)
 
 
     await _msg.edit_text(stats, parse_mode=ParseMode.HTML)

@@ -1,4 +1,4 @@
-*.session
+*.session*
 Logs
 *.log
 __pycache__
